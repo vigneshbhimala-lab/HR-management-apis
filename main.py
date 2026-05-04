@@ -1,6 +1,10 @@
 from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+from passlib.context import CryptContext
 
 app = FastAPI()
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # Dummy database
 foods = [
@@ -52,3 +56,37 @@ def place_order(food_id: int):
 @app.get("/orders")
 def get_orders():
     return orders
+
+# fake database
+users = []
+
+# 🔹 Signup
+@app.post("/signup")
+def signup(username: str, password: str):
+    for user in users:
+        if user["username"] == username:
+            raise HTTPException(status_code=400, detail="User already exists")
+
+    hashed_password = pwd_context.hash(password)
+
+    user = {
+        "username": username,
+        "password": hashed_password
+    }
+
+    users.append(user)
+
+    return {"message": "User created successfully ✅"}
+
+
+# 🔹 Login
+@app.post("/login")
+def login(username: str, password: str):
+    for user in users:
+        if user["username"] == username:
+            if pwd_context.verify(password, user["password"]):
+                return {"message": "Login successful 🔥"}
+            else:
+                raise HTTPException(status_code=401, detail="Wrong password")
+
+    raise HTTPException(status_code=404, detail="User not found")
