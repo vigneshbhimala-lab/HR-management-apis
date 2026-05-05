@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from passlib.context import CryptContext
 from jose import JWTError, jwt
 from fastapi.security import OAuth2PasswordBearer
-
+from pydantic import BaseModel, Field
 app = FastAPI()
 
 # 🔐 Config
@@ -39,8 +39,8 @@ def signup(user: User):
     for u in users:
         if u["username"] == user.username:
             raise HTTPException(status_code=400, detail="User exists")
-
-    hashed = pwd_context.hash(user.password)
+    password = user.password[:72]
+    hashed = pwd_context.hash(password)
     users.append({"username": user.username, "password": hashed})
 
     return {"message": "User created"}
