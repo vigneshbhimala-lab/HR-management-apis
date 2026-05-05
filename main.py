@@ -4,6 +4,9 @@ from passlib.context import CryptContext
 from jose import JWTError, jwt
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel, Field
+from fastapi.security import OAuth2PasswordRequestForm
+
+
 app = FastAPI()
 
 # 🔐 Config
@@ -47,16 +50,18 @@ def signup(user: User):
 
 # 🔹 Login (returns token)
 @app.post("/login")
-def login(user: User):
+def login(form_data: OAuth2PasswordRequestForm = Depends()):
+    username = form_data.username
+    password = form_data.password
+
     for u in users:
-        if u["username"] == user.username:
-            if pwd_context.verify(user.password, u["password"]):
-                token = create_token({"sub": user.username})
+        if u["username"] == username:
+            if pwd_context.verify(password, u["password"]):
+                token = create_token({"sub": username})
                 return {"access_token": token, "token_type": "bearer"}
             raise HTTPException(status_code=401, detail="Wrong password")
 
     raise HTTPException(status_code=404, detail="User not found")
-
 # 🔒 Protected Route
 @app.get("/profile")
 def profile(current_user: str = Depends(get_current_user)):
