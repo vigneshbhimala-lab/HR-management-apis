@@ -118,3 +118,7 @@ def login(form_data: OAuth2PasswordRequestForm = Depends()):
                 raise HTTPException(status_code=401, detail="Wrong password")
 
     raise HTTPException(status_code=404, detail="User not found")
+
+@app.get("/profile")
+def get_profile(current_user: str = Depends(get_current_user)):
+    return {"message": f"Welcome {current_user} 🔥"}
