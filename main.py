@@ -2,6 +2,9 @@ from fastapi import FastAPI, HTTPException, Depends
 from passlib.context import CryptContext
 from jose import jwt, JWTError
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from sqlalchemy.orm import Session
+from database import SessionLocal, engine, Base
+from models import User, Order
 
 app = FastAPI()
 
@@ -12,6 +15,19 @@ ALGORITHM = "HS256"
 pwd_context = CryptContext(schemes=["bcrypt_sha256"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
+# ---------------- DATABASE SETUP ---------------- #
+
+Base.metadata.create_all(bind=engine)
+
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
 # ---------------- FOOD APIs ---------------- #
 
 foods = [
@@ -19,8 +35,6 @@ foods = [
     {"id": 2, "name": "Pizza", "price": 200},
     {"id": 3, "name": "Burger", "price": 120}
 ]
-
-orders = []
 
 
 @app.get("/")
@@ -39,40 +53,9 @@ def get_food(food_id: int):
         if food["id"] == food_id:
             return food
     raise HTTPException(status_code=404, detail="Food not found")
-def get_current_user(token: str = Depends(oauth2_scheme)):
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        return payload.get("sub")
-    except JWTError:
-        raise HTTPException(status_code=401, detail="Invalid token")
 
 
-# 🔒 Protect order API
-@app.post("/order")
-def place_order(food_id: int, user: str = Depends(get_current_user)):
-    for food in foods:
-        if food["id"] == food_id:
-            order = {
-                "order_id": len(orders) + 1,
-                "item": food["name"],
-                "price": food["price"],
-                "user": user
-            }
-            orders.append(order)
-            return {"message": "Order placed", "order": order}
-
-    raise HTTPException(status_code=400, detail="Invalid food id")
-
-
-@app.get("/orders")
-def get_orders():
-    return orders
-
-
-# ---------------- AUTH APIs ---------------- #
-
-users = []
-
+# ---------------- AUTH HELPERS ---------------- #
 
 def create_token(data: dict):
     return jwt.encode(data, SECRET_KEY, algorithm=ALGORITHM)
@@ -86,38 +69,63 @@ def get_current_user(token: str = Depends(oauth2_scheme)):
         raise HTTPException(status_code=401, detail="Invalid token")
 
 
-# Signup
+# ---------------- AUTH APIs ---------------- #
+
 @app.post("/signup")
-def signup(username: str, password: str):
-    for user in users:
-        if user["username"] == username:
-            raise HTTPException(status_code=400, detail="User already exists")
+def signup(username: str, password: str, db: Session = Depends(get_db)):
+    existing_user = db.query(User).filter(User.username == username).first()
+    if existing_user:
+        raise HTTPException(status_code=400, detail="User already exists")
 
     hashed_password = pwd_context.hash(password)
 
-    users.append({
-        "username": username,
-        "password": hashed_password
-    })
+    new_user = User(username=username, password=hashed_password)
+    db.add(new_user)
+    db.commit()
 
     return {"message": "User created successfully ✅"}
 
 
-# 🔐 Login (OAuth2 standard)
 @app.post("/login")
-def login(form_data: OAuth2PasswordRequestForm = Depends()):
-    username = form_data.username
-    password = form_data.password
+def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.username == form_data.username).first()
 
-    for user in users:
-        if user["username"] == username:
-            if pwd_context.verify(password, user["password"]):
-                token = create_token({"sub": username})
-                return {"access_token": token, "token_type": "bearer"}
-            else:
-                raise HTTPException(status_code=401, detail="Wrong password")
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
 
-    raise HTTPException(status_code=404, detail="User not found")
+    if not pwd_context.verify(form_data.password, user.password):
+        raise HTTPException(status_code=401, detail="Wrong password")
+
+    token = create_token({"sub": user.username})
+    return {"access_token": token, "token_type": "bearer"}
+
+
+# ---------------- ORDER APIs ---------------- #
+
+@app.post("/order")
+def place_order(food_id: int, current_user: str = Depends(get_current_user), db: Session = Depends(get_db)):
+    for food in foods:
+        if food["id"] == food_id:
+            new_order = Order(
+                item=food["name"],
+                price=food["price"],
+                user=current_user
+            )
+            db.add(new_order)
+            db.commit()
+
+            return {"message": "Order placed"}
+
+    raise HTTPException(status_code=400, detail="Invalid food id")
+
+
+@app.get("/orders")
+def get_orders(current_user: str = Depends(get_current_user), db: Session = Depends(get_db)):
+    user_orders = db.query(Order).filter(Order.user == current_user).all()
+    return user_orders
+
+
+# ---------------- PROFILE ---------------- #
 
 @app.get("/profile")
 def get_profile(current_user: str = Depends(get_current_user)):
