@@ -39,6 +39,12 @@ def get_food(food_id: int):
         if food["id"] == food_id:
             return food
     raise HTTPException(status_code=404, detail="Food not found")
+def get_current_user(token: str = Depends(oauth2_scheme)):
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        return payload.get("sub")
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")
 
 
 # 🔒 Protect order API
