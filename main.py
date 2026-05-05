@@ -1,92 +1,63 @@
-from fastapi import FastAPI
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
+from pydantic import BaseModel
 from passlib.context import CryptContext
+from jose import JWTError, jwt
+from fastapi.security import OAuth2PasswordBearer
 
 app = FastAPI()
 
+# 🔐 Config
+SECRET_KEY = "mysecretkey"
+ALGORITHM = "HS256"
+
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
-# Dummy database
-foods = [
-    {"id": 1, "name": "Biryani", "price": 150},
-    {"id": 2, "name": "Pizza", "price": 200},
-    {"id": 3, "name": "Burger", "price": 120}
-]
-
-orders = []
-
-
-@app.get("/")
-def home():
-    return {"message": "Food API Running 🚀"}
-
-
-# 🔹 Get all foods
-@app.get("/foods")
-def get_foods():
-    return foods
-
-
-# 🔹 Get single food by ID
-@app.get("/foods/{food_id}")
-def get_food(food_id: int):
-    for food in foods:
-        if food["id"] == food_id:
-            return food
-    return {"error": "Food not found"}
-
-
-# 🔹 Create order
-@app.post("/order")
-def place_order(food_id: int):
-    for food in foods:
-        if food["id"] == food_id:
-            order = {
-                "order_id": len(orders) + 1,
-                "item": food["name"],
-                "price": food["price"]
-            }
-            orders.append(order)
-            return {"message": "Order placed", "order": order}
-    
-    return {"error": "Invalid food id"}
-
-
-# 🔹 Get all orders
-@app.get("/orders")
-def get_orders():
-    return orders
-
-# fake database
 users = []
+
+# 🧾 Models
+class User(BaseModel):
+    username: str
+    password: str
+
+# 🔹 Create Token
+def create_token(data: dict):
+    return jwt.encode(data, SECRET_KEY, algorithm=ALGORITHM)
+
+# 🔹 Get Current User
+def get_current_user(token: str = Depends(oauth2_scheme)):
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username = payload.get("sub")
+        return username
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")
 
 # 🔹 Signup
 @app.post("/signup")
-def signup(username: str, password: str):
-    for user in users:
-        if user["username"] == username:
-            raise HTTPException(status_code=400, detail="User already exists")
+def signup(user: User):
+    for u in users:
+        if u["username"] == user.username:
+            raise HTTPException(status_code=400, detail="User exists")
 
-    hashed_password = pwd_context.hash(password)
+    hashed = pwd_context.hash(user.password)
+    users.append({"username": user.username, "password": hashed})
 
-    user = {
-        "username": username,
-        "password": hashed_password
-    }
+    return {"message": "User created"}
 
-    users.append(user)
-
-    return {"message": "User created successfully ✅"}
-
-
-# 🔹 Login
+# 🔹 Login (returns token)
 @app.post("/login")
-def login(username: str, password: str):
-    for user in users:
-        if user["username"] == username:
-            if pwd_context.verify(password, user["password"]):
-                return {"message": "Login successful 🔥"}
-            else:
-                raise HTTPException(status_code=401, detail="Wrong password")
+def login(user: User):
+    for u in users:
+        if u["username"] == user.username:
+            if pwd_context.verify(user.password, u["password"]):
+                token = create_token({"sub": user.username})
+                return {"access_token": token, "token_type": "bearer"}
+            raise HTTPException(status_code=401, detail="Wrong password")
 
     raise HTTPException(status_code=404, detail="User not found")
+
+# 🔒 Protected Route
+@app.get("/profile")
+def profile(current_user: str = Depends(get_current_user)):
+    return {"message": f"Welcome {current_user} 🔥"}
