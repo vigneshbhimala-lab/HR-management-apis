@@ -1,9 +1,22 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 
-DATABASE_URL = "postgresql://foodapp_db_eg2w_user:vH6HLgjrHfxpA63JdYraceJFkXUGmCP9@dpg-d7sseo3rjlhs73d1q78g-a/foodapp_db_eg2w"
+DATABASE_URL = "postgresql://postgres:vignesh123@localhost:5432/employee_db"
 
 engine = create_engine(DATABASE_URL)
 
-SessionLocal = sessionmaker(bind=engine)
+SessionLocal = sessionmaker(
+    autocommit=False,
+    autoflush=False,
+    bind=engine
+)
+
 Base = declarative_base()
+
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
