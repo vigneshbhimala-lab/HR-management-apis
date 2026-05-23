@@ -92,7 +92,10 @@ def create_employee(
 
     
     db.refresh(employee)
-    send_email(employee.email, employee.name)
+    try:
+        send_email(employee.email, employee.name)
+    except Exception as e:
+        print(f"Error sending email: {e}")
 
     return {
         "message": "Employee created successfully",
