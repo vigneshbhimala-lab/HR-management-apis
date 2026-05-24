@@ -7,7 +7,8 @@ from database import engine, Base, get_db
 from invoices import router as invoices_router
 from models import Employee, User
 from email_utils import send_email
-
+import json
+from redis_client import redis_client
 app = FastAPI()
 
 
@@ -89,7 +90,7 @@ def create_employee(
 
     db.add(employee)
     db.commit()
-
+    redis_client.delete("employees")
     
     db.refresh(employee)
     try:
@@ -115,10 +116,35 @@ def get_employees(
     db: Session = Depends(get_db)
 ):
 
+    cached_employees = redis_client.get("employees")
+
+    if cached_employees:
+        print("Data coming from Redis Cache")
+        return json.loads(cached_employees)
+
+    print("Data coming from PostgreSQL")
+
     employees = db.query(Employee).all()
 
-    return employees
+    employee_list = []
 
+    for employee in employees:
+        employee_list.append({
+            "id": employee.id,
+            "name": employee.name,
+            "email": employee.email,
+            "dob": employee.dob,
+            "gender": employee.gender,
+            "nationality": employee.nationality,
+            "education": employee.education
+        })
+
+    redis_client.set(
+        "employees",
+        json.dumps(employee_list)
+    )
+
+    return employee_list
 
 @app.get("/employees/{employee_id}")
 def get_employee(
